@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PDF Metadata &amp; Compliance Checker</title>
+  <style>
+    :root {
+      --ink: #1c2430;
+      --muted: #5c6775;
+      --line: #e4ddd2;
+      --paper: #f6f3ee;
+      --card: #fffcf8;
+      --accent: #0f6e6e;
+      --pass: #1f7a4d;
+      --fail: #a33b32;
+      --pass-bg: #e7f5ee;
+      --fail-bg: #fdecea;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+    }
+    header {
+      background: var(--ink);
+      color: #f6f3ee;
+      padding: 1.25rem 1.5rem;
+    }
+    header h1 { margin: 0; font-size: 1.35rem; font-weight: 650; letter-spacing: 0; }
+    header p { margin: 0.35rem 0 0; color: #d5dbe3; max-width: 42rem; }
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(16rem, 0.8fr);
+      gap: 1rem;
+      max-width: 68rem;
+      margin: 0 auto;
+      padding: 1.25rem;
+    }
+    section, aside {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1rem 1.1rem 1.15rem;
+    }
+    h2 { margin: 0 0 0.75rem; font-size: 1rem; }
+    .drop {
+      border: 1.5px dashed #c9bfb2;
+      border-radius: 10px;
+      padding: 1.25rem;
+      text-align: center;
+      background: #fbfaf7;
+    }
+    input[type="file"] { margin: 0.6rem 0; }
+    button {
+      background: var(--accent);
+      color: white;
+      border: 0;
+      border-radius: 8px;
+      padding: 0.55rem 0.95rem;
+      font: inherit;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.6; cursor: wait; }
+    .summary { margin: 0.9rem 0 0.4rem; font-weight: 650; }
+    ul { list-style: none; padding: 0; margin: 0; }
+    li {
+      border-radius: 8px;
+      padding: 0.55rem 0.7rem;
+      margin: 0.4rem 0;
+      line-height: 1.35;
+    }
+    li.pass { background: var(--pass-bg); }
+    li.fail { background: var(--fail-bg); }
+    .tag {
+      display: inline-block;
+      min-width: 2.6rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    li.pass .tag { color: var(--pass); }
+    li.fail .tag { color: var(--fail); }
+    .rule { color: var(--muted); font-size: 0.92rem; }
+    .error { color: var(--fail); }
+    dl { margin: 0; }
+    dt { font-weight: 650; margin-top: 0.7rem; }
+    dd { margin: 0.15rem 0 0; color: var(--muted); word-break: break-word; }
+    @media (max-width: 800px) {
+      main { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>PDF Metadata &amp; Compliance Checker</h1>
+    <p>Check a PDF on this computer against the rules loaded for classification, required metadata, file naming, and PDF/A identification.</p>
+  </header>
+  <main>
+    <section>
+      <h2>Check a file</h2>
+      <form id="form" class="drop">
+        <label for="file">Choose a PDF. It stays on this machine.</label><br>
+        <input id="file" name="file" type="file" accept="application/pdf,.pdf" required>
+        <div><button id="submit" type="submit">Check PDF</button></div>
+      </form>
+      <p id="status" class="summary" aria-live="polite"></p>
+      <ul id="findings"></ul>
+    </section>
+    <aside>
+      <h2>Active rules</h2>
+      <dl id="rules"><div class="rule">Loading rules…</div></dl>
+    </aside>
+  </main>
+  <script>
+    const form = document.getElementById("form");
+    const fileInput = document.getElementById("file");
+    const submit = document.getElementById("submit");
+    const status = document.getElementById("status");
+    const findings = document.getElementById("findings");
+    const rulesList = document.getElementById("rules");
+
+    fetch("/api/rules")
+      .then((response) => response.json())
+      .then((rules) => {
+        const fileRule = rules.file_name || {};
+        const classification = rules.classification || {};
+        const pdfa = rules.pdfa || {};
+        const rows = [
+          ["File name", fileRule.enabled ? fileRule.pattern : "Off"],
+          ["Required metadata", (rules.required_metadata || []).join(", ") || "None"],
+          ["Classification", classification.enabled ? (classification.allowed_values || []).join(", ") : "Off"],
+          ["Classification keys", (classification.keys || []).join(", ")],
+          ["PDF/A parts", pdfa.enabled ? (pdfa.accepted_parts || []).join(", ") : "Off"],
+          ["PDF/A levels", pdfa.enabled ? (pdfa.accepted_conformance || []).join(", ") : "Off"]
+        ];
+        rulesList.innerHTML = rows.map(([term, detail]) =>
+          `<dt>${escapeHtml(term)}</dt><dd>${escapeHtml(detail)}</dd>`
+        ).join("");
+      })
+      .catch(() => {
+        rulesList.textContent = "Rules could not be loaded.";
+      });
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const file = fileInput.files && fileInput.files[0];
+      findings.innerHTML = "";
+      if (!file) {
+        status.textContent = "Choose a PDF first.";
+        status.className = "summary error";
+        return;
+      }
+      submit.disabled = true;
+      status.className = "summary";
+      status.textContent = "Checking " + file.name + "…";
+      try {
+        const response = await fetch("/api/check", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/pdf",
+            "X-Filename": encodeURIComponent(file.name)
+          },
+          body: await file.arrayBuffer()
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          status.textContent = payload.error || "The check failed.";
+          status.className = "summary error";
+          return;
+        }
+        status.textContent = payload.passed
+          ? file.name + " passed every active rule."
+          : file.name + " has one or more failures.";
+        findings.innerHTML = (payload.findings || []).map((item) => {
+          const status = item.status === "pass" ? "pass" : "fail";
+          return `<li class="${status}"><span class="tag">${status}</span> ${escapeHtml(item.rule)}: ${escapeHtml(item.message)}</li>`;
+        }).join("");
+      } catch (error) {
+        status.textContent = "The checker could not be reached.";
+        status.className = "summary error";
+      } finally {
+        submit.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

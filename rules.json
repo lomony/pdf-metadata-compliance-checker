@@ -1,0 +1,19 @@
+{
+  "file_name": {
+    "enabled": true,
+    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,180}\\.pdf$",
+    "ignore_case": false
+  },
+  "required_metadata": ["Title", "Author", "Subject"],
+  "classification": {
+    "enabled": true,
+    "keys": ["Classification", "SecurityClassification"],
+    "allowed_values": ["Public", "Internal", "Confidential", "Restricted"],
+    "search_keywords": true
+  },
+  "pdfa": {
+    "enabled": true,
+    "accepted_parts": ["1", "2", "3"],
+    "accepted_conformance": ["A", "B", "U"]
+  }
+}
